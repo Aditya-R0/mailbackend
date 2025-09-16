@@ -11,7 +11,6 @@ const fs = require('fs');
 const path = require('path');
 const jwt = require('jsonwebtoken'); // 🔧 ADD: JWT support
 
-
 class SecureEmailTracker {
     constructor() {
         this.app = express();
@@ -54,7 +53,6 @@ class SecureEmailTracker {
 
     setupDatabase() {
         const dbPath = process.env.DATABASE_PATH || './tracking.db';
-
         this.db = new sqlite3.Database(dbPath, (err) => {
             if (err) {
                 this.logger.error('Database connection error:', err);
@@ -144,6 +142,7 @@ class SecureEmailTracker {
 
         // 🔧 Handle preflight requests for images
         this.app.options('*', cors());
+
         this.app.use(express.json({ limit: '10mb' }));
         this.app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
@@ -217,7 +216,6 @@ class SecureEmailTracker {
             } catch (rejRes) {
                 const remainingPoints = rejRes.remainingPoints;
                 const msBeforeNext = rejRes.msBeforeNext;
-
                 res.set('Retry-After', Math.round(msBeforeNext / 1000) || 1);
                 res.status(429).json({
                     error: 'Too Many Requests',
@@ -229,21 +227,17 @@ class SecureEmailTracker {
 
     requireApiKey(req, res, next) {
         const apiKey = req.headers['x-api-key'] || req.headers['authorization']?.replace('Bearer ', '');
-
         if (!apiKey || apiKey !== this.secretKey) {
             return res.status(401).json({ error: 'Invalid or missing API key' });
         }
-
         next();
     }
 
     requireAdminKey(req, res, next) {
         const adminKey = req.headers['x-admin-key'];
-
         if (!adminKey || adminKey !== process.env.ADMIN_API_KEY) {
             return res.status(401).json({ error: 'Invalid or missing admin key' });
         }
-
         next();
     }
 
@@ -288,7 +282,6 @@ class SecureEmailTracker {
                 pixelUrl,
                 expiresAt: new Date(payload.exp).toISOString()
             });
-
         } catch (error) {
             this.logger.error('Token generation error:', error);
             res.status(500).json({
@@ -302,7 +295,7 @@ class SecureEmailTracker {
     async handlePixelRequest(req, res) {
         try {
             console.log('🔍 Raw token from URL:', req.params.token);
-
+            
             // 🔧 URL decode the token first
             const decodedToken = decodeURIComponent(req.params.token);
             console.log('🔍 Decoded token:', decodedToken);
@@ -351,7 +344,6 @@ class SecureEmailTracker {
             });
 
             this.sendPixel(res);
-
         } catch (error) {
             console.error('❌ Pixel request error:', error);
             this.logger.error('Pixel request error:', error);
@@ -365,7 +357,7 @@ class SecureEmailTracker {
             INSERT OR REPLACE INTO tokens (token_hash, message_id, recipient_hash, expires_at)
             VALUES (?, ?, ?, datetime('now', '+24 hours'))
         `;
-
+        
         this.db.run(query, [tokenHash, messageId, recipientHash], (err) => {
             if (err) {
                 this.logger.error('Error storing token:', err);
@@ -379,7 +371,6 @@ class SecureEmailTracker {
             /facebookexternalhit/i, /twitterbot/i, /linkedinbot/i,
             /preview/i, /scanner/i, /validator/i, /googleimageproxy/i
         ];
-
         return botPatterns.some(pattern => pattern.test(userAgent));
     }
 
@@ -483,11 +474,11 @@ class SecureEmailTracker {
 
         try {
             const { token } = req.body;
-
+            
             try {
                 const payload = jwt.verify(token, this.secretKey);
                 const isExpired = payload.exp && Date.now() > payload.exp;
-
+                
                 res.json({
                     valid: true,
                     expired: isExpired,
@@ -500,7 +491,6 @@ class SecureEmailTracker {
                     error: jwtError.message
                 });
             }
-
         } catch (error) {
             this.logger.error('Token validation error:', error);
             res.status(500).json({ error: 'Internal server error' });
@@ -510,7 +500,7 @@ class SecureEmailTracker {
     async handleStatsRequest(req, res) {
         try {
             const messageId = req.params.messageId;
-
+            
             let query = `
                 SELECT 
                     COUNT(*) as total_opens,
@@ -520,9 +510,8 @@ class SecureEmailTracker {
                     MAX(timestamp) as last_open
                 FROM open_events
             `;
-
+            
             const params = [];
-
             if (messageId) {
                 query += ' WHERE message_id = ?';
                 params.push(messageId);
@@ -539,7 +528,6 @@ class SecureEmailTracker {
                     messageId: messageId || 'all'
                 });
             });
-
         } catch (error) {
             this.logger.error('Stats request error:', error);
             res.status(500).json({ error: 'Internal server error' });
@@ -569,7 +557,6 @@ class SecureEmailTracker {
                     cutoffDate: cutoffDate.toISOString()
                 });
             });
-
         } catch (error) {
             this.logger.error('Data cleanup error:', error);
             res.status(500).json({ error: 'Internal server error' });
@@ -595,7 +582,6 @@ class SecureEmailTracker {
 
     gracefulShutdown(signal) {
         this.logger.info(`Received ${signal}, shutting down gracefully`);
-
         this.db.close((err) => {
             if (err) {
                 this.logger.error('Error closing database:', err);
@@ -607,7 +593,8 @@ class SecureEmailTracker {
     }
 
     start() {
-        this.app.listen(this.port, process.env.HOST || 'localhost', () => {
+        // 🔧 FIX: Listen on all interfaces (0.0.0.0) instead of localhost
+        this.app.listen(this.port, '0.0.0.0', () => {
             this.logger.info(`Secure Email Tracker backend running on port ${this.port}`);
             this.logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
         });
